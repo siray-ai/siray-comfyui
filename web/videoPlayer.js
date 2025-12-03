@@ -2,6 +2,7 @@ import { app, ANIM_PREVIEW_WIDGET } from '../../../scripts/app.js';
 import { createImageHost } from "../../../scripts/ui/imagePreview.js"
 
 const BASE_SIZE = 768;
+const VIDEO_STATE_KEY = "__sirayVideoPreviewState";
 
 function setVideoDimensions(videoElement, width, height) {
     videoElement.style.width = `${width}px`;
@@ -45,108 +46,203 @@ export function chainCallback(object, property, callback) {
     }
 };
 
-export function addVideoPreview(nodeType, options = {}) {
-    const createVideoNode = (url) => {
-        return new Promise((cb) => {
-            const videoEl = document.createElement('video');
-            videoEl.addEventListener('loadedmetadata', () => {
-                // Show native controls so user can unmute if desired
-                videoEl.controls = true;
-                videoEl.loop = true;
-                // Start muted to satisfy autoplay policies; allow user to unmute via click/controls
-                videoEl.muted = true;
-                // iOS/Safari inline playback with sound after gesture
-                videoEl.playsInline = true;
-                // Click to unmute and continue playback with audio
-                videoEl.addEventListener('click', () => {
-                    if (videoEl.muted) {
-                        videoEl.muted = false;
-                        videoEl.play();
-                    }
-                });
-                resizeVideoAspectRatio(videoEl, BASE_SIZE, BASE_SIZE);
-                cb(videoEl);
-            });
-            videoEl.addEventListener('error', () => {
-                cb();
-            });
-            videoEl.src = url;
-        });
-    };
+const getPreviewState = (node) => {
+    if (!node[VIDEO_STATE_KEY]) {
+        node[VIDEO_STATE_KEY] = {
+            cache: new Map(),
+            pendingSignature: "",
+            appliedSignature: "",
+            widget: null,
+        };
+    }
+    return node[VIDEO_STATE_KEY];
+};
 
+const normalizeUrls = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.filter(Boolean);
+    return [value];
+};
+
+const buildSignature = (urls) => urls.join("|");
+
+const setupVideoElement = (videoEl) => {
+    if (videoEl.__siraySetupDone) return;
+
+    videoEl.controls = true;
+    videoEl.loop = true;
+    videoEl.muted = true;
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.preload = "metadata";
+    videoEl.__siraySetupDone = true;
+
+    videoEl.addEventListener("click", () => {
+        if (videoEl.muted) {
+            videoEl.muted = false;
+            videoEl.play();
+        }
+    });
+};
+
+const loadVideoWithCache = (url, state) => {
+    const cached = state.cache.get(url);
+    if (cached?.ready) {
+        return Promise.resolve(cached.el);
+    }
+    if (cached?.loading) {
+        return cached.loading;
+    }
+
+    const videoEl = cached?.el ?? document.createElement("video");
+    setupVideoElement(videoEl);
+
+    const loading = new Promise((resolve) => {
+        const cleanup = () => {
+            videoEl.removeEventListener("loadedmetadata", handleLoaded);
+            videoEl.removeEventListener("error", handleError);
+        };
+
+        const handleLoaded = () => {
+            cleanup();
+            resizeVideoAspectRatio(videoEl, BASE_SIZE, BASE_SIZE);
+            state.cache.set(url, { el: videoEl, ready: true });
+            const playPromise = videoEl.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => { });
+            }
+            resolve(videoEl);
+        };
+
+        const handleError = () => {
+            cleanup();
+            state.cache.delete(url);
+            resolve(null);
+        };
+
+        videoEl.addEventListener("loadedmetadata", handleLoaded);
+        videoEl.addEventListener("error", handleError);
+        videoEl.src = url;
+    });
+
+    state.cache.set(url, { el: videoEl, ready: false, loading });
+    return loading;
+};
+
+const cleanupStaleCache = (state, activeUrls) => {
+    const active = new Set(activeUrls);
+    for (const [url, entry] of state.cache.entries()) {
+        if (active.has(url)) continue;
+        try {
+            entry.el.pause();
+            entry.el.removeAttribute("src");
+            entry.el.load();
+        } catch (err) {
+            console.warn("Failed to cleanup cached video", err);
+        }
+        state.cache.delete(url);
+    }
+};
+
+const ensurePreviewWidget = (node) => {
+    const state = getPreviewState(node);
+    if (state.widget) return state.widget;
+
+    const existingIdx = node.widgets?.findIndex((w) => w.name === ANIM_PREVIEW_WIDGET) ?? -1;
+    if (existingIdx > -1) {
+        const existingWidget = node.widgets[existingIdx];
+        if (existingWidget?.options?.host?.updateImages) {
+            state.widget = existingWidget;
+            return state.widget;
+        }
+    }
+
+    const host = createImageHost(node);
+    const widget = node.addDOMWidget(ANIM_PREVIEW_WIDGET, "img", host.el, {
+        host,
+        getHeight: host.getHeight,
+        onDraw: host.onDraw,
+        hideOnZoom: false,
+    });
+    widget.serializeValue = () => ({
+        height: BASE_SIZE,
+    });
+    state.widget = widget;
+    return widget;
+};
+
+const updatePreview = (node, videos, urls, urlsSignature) => {
+    const state = getPreviewState(node);
+
+    node.imgs = videos;
+    node.displayingImages = [...urls];
+    node.animatedImages = videos.length > 0;
+    node.size[0] = BASE_SIZE;
+    node.size[1] = BASE_SIZE;
+
+    if (videos.length) {
+        const widget = ensurePreviewWidget(node);
+        widget.options.host.updateImages(videos);
+    }
+
+    state.appliedSignature = urlsSignature;
+    state.pendingSignature = "";
+    node.setDirtyCanvas(true, true);
+};
+
+export function addVideoPreview(nodeType, options = {}) {
     nodeType.prototype.onDrawBackground = function (ctx) {
         if (this.flags.collapsed) return;
 
-        let imageURLs = this.images ?? [];
-        let imagesChanged = false;
+        const state = getPreviewState(this);
+        const urls = normalizeUrls(this.images);
+        const signature = buildSignature(urls);
 
-        if (JSON.stringify(this.displayingImages) !== JSON.stringify(imageURLs)) {
-            this.displayingImages = imageURLs;
-            imagesChanged = true;
-        }
-
-        if (!imagesChanged) {
-            return;
-        }
-
-        if (!imageURLs.length) {
+        if (!signature) {
+            cleanupStaleCache(state, []);
+            state.appliedSignature = "";
+            state.pendingSignature = "";
             this.imgs = null;
+            this.displayingImages = [];
             this.animatedImages = false;
             return;
         }
 
-        const promises = imageURLs.map((url) => {
-            return createVideoNode(url);
-        });
+        if (signature === state.appliedSignature || signature === state.pendingSignature) {
+            return;
+        }
 
-        Promise.all(promises)
-            .then((imgs) => {
-                this.imgs = imgs.filter(Boolean);
-            })
-            .then(() => {
-                if (!this.imgs.length) return;
+        state.pendingSignature = signature;
+        const loadAll = urls.map((url) => loadVideoWithCache(url, state));
 
-                this.animatedImages = true;
-                const widgetIdx = this.widgets?.findIndex((w) => w.name === ANIM_PREVIEW_WIDGET);
-
-                // Set node size to 1024x1024
-                this.size[0] = BASE_SIZE;
-                this.size[1] = BASE_SIZE;
-
-                if (widgetIdx > -1) {
-                    // Replace content
-                    const widget = this.widgets[widgetIdx];
-                    widget.options.host.updateImages(this.imgs);
-                } else {
-                    const host = createImageHost(this);
-                    const widget = this.addDOMWidget(ANIM_PREVIEW_WIDGET, 'img', host.el, {
-                        host,
-                        getHeight: host.getHeight,
-                        onDraw: host.onDraw,
-                        hideOnZoom: false,
-                    });
-                    widget.serializeValue = () => ({
-                        height: BASE_SIZE,
-                    });
-
-                    widget.options.host.updateImages(this.imgs);
+        Promise.all(loadAll)
+            .then((videos) => {
+                const readyVideos = videos.filter(Boolean);
+                if (state.pendingSignature !== signature) {
+                    return;
                 }
-
-                this.imgs.forEach((img) => {
-                    if (img instanceof HTMLVideoElement) {
-                        // Keep initial autoplay muted; user can unmute via controls or click
-                        img.muted = true;
-                        img.autoplay = true;
-                        // Best-effort autoplay; ignore promise rejection from blocked autoplay with sound
-                        const playPromise = img.play();
-                        if (playPromise && typeof playPromise.catch === 'function') {
-                            playPromise.catch(() => {});
+                cleanupStaleCache(state, urls);
+                if (!readyVideos.length) {
+                    this.imgs = null;
+                    this.displayingImages = [];
+                    this.animatedImages = false;
+                    state.appliedSignature = signature;
+                    state.pendingSignature = "";
+                    return;
+                }
+                updatePreview(this, readyVideos, urls, signature);
+                readyVideos.forEach((video) => {
+                    if (video.paused) {
+                        const playPromise = video.play();
+                        if (playPromise && typeof playPromise.catch === "function") {
+                            playPromise.catch(() => { });
                         }
                     }
                 });
-
-                // Force canvas update
-                this.setDirtyCanvas(true, true);
+            })
+            .catch((err) => {
+                console.error("Failed to load video preview", err);
+                state.pendingSignature = "";
             });
     };
 
