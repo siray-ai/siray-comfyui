@@ -379,8 +379,8 @@ class VideoPreviewNode:
             },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("video_url",)
+    RETURN_TYPES = ()
+    RETURN_NAMES = ()
     FUNCTION = "preview"
     CATEGORY = "Siray/Utils"
 
@@ -412,7 +412,7 @@ class VideoPreviewNode:
         if poster_clean:
             payload["poster"] = poster_clean
 
-        return {"ui": {"siray_video_preview": payload}, "result": (cleaned_url,)}
+        return {"ui": {"siray_video_preview": payload}}
 
 
 class SirayClientNode:
