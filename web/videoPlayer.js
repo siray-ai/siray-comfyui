@@ -1,179 +1,169 @@
-import { app } from "/scripts/app.js";
+import { app, ANIM_PREVIEW_WIDGET } from '../../../scripts/app.js';
+import { createImageHost } from "../../../scripts/ui/imagePreview.js"
 
-const EXTENSION_NAME = "siray.videoPlayer";
-const MODAL_ID = "siray-video-player-modal";
+const BASE_SIZE = 768;
 
-function buildModal() {
-    let modal = document.getElementById(MODAL_ID);
-    if (modal) return modal;
-
-    modal = document.createElement("div");
-    modal.id = MODAL_ID;
-    modal.style.position = "fixed";
-    modal.style.inset = "0";
-    modal.style.display = "none";
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.background = "rgba(0,0,0,0.6)";
-    modal.style.zIndex = "9999";
-    modal.addEventListener("click", () => hideModal());
-
-    const panel = document.createElement("div");
-    panel.style.background = "#0f0f0f";
-    panel.style.border = "1px solid #2a2a2a";
-    panel.style.borderRadius = "10px";
-    panel.style.width = "min(860px, 92vw)";
-    panel.style.padding = "12px";
-    panel.style.boxSizing = "border-box";
-    panel.addEventListener("click", (event) => event.stopPropagation());
-
-    const header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.alignItems = "center";
-    header.style.justifyContent = "space-between";
-    header.style.gap = "10px";
-    header.style.marginBottom = "8px";
-
-    const title = document.createElement("div");
-    title.dataset.role = "siray-video-title";
-    title.style.fontSize = "15px";
-    title.style.fontWeight = "600";
-    title.style.color = "#f5f5f5";
-    title.textContent = "Siray Video";
-
-    const controls = document.createElement("div");
-    controls.style.display = "flex";
-    controls.style.alignItems = "center";
-    controls.style.gap = "10px";
-
-    const openLink = document.createElement("a");
-    openLink.dataset.role = "siray-video-link";
-    openLink.target = "_blank";
-    openLink.rel = "noreferrer noopener";
-    openLink.style.color = "#8ec5ff";
-    openLink.style.fontSize = "12px";
-    openLink.style.textDecoration = "none";
-    openLink.textContent = "Open in new tab";
-
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "Close";
-    closeBtn.style.cursor = "pointer";
-    closeBtn.onclick = () => hideModal();
-
-    controls.append(openLink, closeBtn);
-    header.append(title, controls);
-
-    const video = document.createElement("video");
-    video.dataset.role = "siray-video-element";
-    video.controls = true;
-    video.style.width = "100%";
-    video.style.maxHeight = "70vh";
-    video.style.borderRadius = "8px";
-    video.style.background = "#111";
-
-    panel.append(header, video);
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
-    return modal;
+function setVideoDimensions(videoElement, width, height) {
+    videoElement.style.width = `${width}px`;
+    videoElement.style.height = `${height}px`;
 }
 
-function hideModal() {
-    const modal = document.getElementById(MODAL_ID);
-    if (!modal) return;
-    const video = modal.querySelector("[data-role='siray-video-element']");
-    if (video) {
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-    }
-    modal.style.display = "none";
-}
+// Resize video maintaining aspect ratio
+export function resizeVideoAspectRatio(videoElement, maxWidth, maxHeight) {
+    const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
+    let newWidth, newHeight;
 
-function openModal(payload) {
-    if (!payload?.video_url) return;
-    const modal = buildModal();
-    const video = modal.querySelector("[data-role='siray-video-element']");
-    const title = modal.querySelector("[data-role='siray-video-title']");
-    const link = modal.querySelector("[data-role='siray-video-link']");
-
-    title.textContent = payload.title || "Siray Video";
-    link.href = payload.video_url;
-
-    video.loop = !!payload.loop;
-    video.muted = payload.muted === undefined ? true : !!payload.muted;
-    video.autoplay = !!payload.autoplay;
-    if (payload.poster) {
-        video.poster = payload.poster;
+    // Check which dimension is the limiting factor
+    if (videoElement.videoWidth / maxWidth > videoElement.videoHeight / maxHeight) {
+        // Width is the limiting factor
+        newWidth = maxWidth;
+        newHeight = newWidth / aspectRatio;
     } else {
-        video.removeAttribute("poster");
+        // Height is the limiting factor
+        newHeight = maxHeight;
+        newWidth = newHeight * aspectRatio;
     }
 
-    if (video.src !== payload.video_url) {
-        video.src = payload.video_url;
-        video.load();
-    }
-
-    modal.style.display = "flex";
-    setTimeout(() => {
-        video.play().catch(() => {});
-    }, 30);
+    setVideoDimensions(videoElement, newWidth, newHeight);
 }
 
-function attachButton(node) {
-    if (node.sirayVideoWidget) return;
-    const widget = node.addWidget("button", "Play video", null, () => {
-        if (node.sirayVideoPayload?.video_url) {
-            openModal(node.sirayVideoPayload);
+export function chainCallback(object, property, callback) {
+    if (object == undefined) {
+        //This should not happen.
+        console.error("Tried to add callback to non-existant object");
+        return;
+    }
+    if (property in object) {
+        const callback_orig = object[property];
+        object[property] = function () {
+            const r = callback_orig.apply(this, arguments);
+            callback.apply(this, arguments);
+            return r;
+        };
+    } else {
+        object[property] = callback;
+    }
+};
+
+export function addVideoPreview(nodeType, options = {}) {
+    const createVideoNode = (url) => {
+        return new Promise((cb) => {
+            const videoEl = document.createElement('video');
+            videoEl.addEventListener('loadedmetadata', () => {
+                // Show native controls so user can unmute if desired
+                videoEl.controls = true;
+                videoEl.loop = true;
+                // Start muted to satisfy autoplay policies; allow user to unmute via click/controls
+                videoEl.muted = true;
+                // iOS/Safari inline playback with sound after gesture
+                videoEl.playsInline = true;
+                // Click to unmute and continue playback with audio
+                videoEl.addEventListener('click', () => {
+                    if (videoEl.muted) {
+                        videoEl.muted = false;
+                        videoEl.play();
+                    }
+                });
+                resizeVideoAspectRatio(videoEl, BASE_SIZE, BASE_SIZE);
+                cb(videoEl);
+            });
+            videoEl.addEventListener('error', () => {
+                cb();
+            });
+            videoEl.src = url;
+        });
+    };
+
+    nodeType.prototype.onDrawBackground = function (ctx) {
+        if (this.flags.collapsed) return;
+
+        let imageURLs = this.images ?? [];
+        let imagesChanged = false;
+
+        if (JSON.stringify(this.displayingImages) !== JSON.stringify(imageURLs)) {
+            this.displayingImages = imageURLs;
+            imagesChanged = true;
+        }
+
+        if (!imagesChanged) {
+            return;
+        }
+
+        if (!imageURLs.length) {
+            this.imgs = null;
+            this.animatedImages = false;
+            return;
+        }
+
+        const promises = imageURLs.map((url) => {
+            return createVideoNode(url);
+        });
+
+        Promise.all(promises)
+            .then((imgs) => {
+                this.imgs = imgs.filter(Boolean);
+            })
+            .then(() => {
+                if (!this.imgs.length) return;
+
+                this.animatedImages = true;
+                const widgetIdx = this.widgets?.findIndex((w) => w.name === ANIM_PREVIEW_WIDGET);
+
+                // Set node size to 1024x1024
+                this.size[0] = BASE_SIZE;
+                this.size[1] = BASE_SIZE;
+
+                if (widgetIdx > -1) {
+                    // Replace content
+                    const widget = this.widgets[widgetIdx];
+                    widget.options.host.updateImages(this.imgs);
+                } else {
+                    const host = createImageHost(this);
+                    const widget = this.addDOMWidget(ANIM_PREVIEW_WIDGET, 'img', host.el, {
+                        host,
+                        getHeight: host.getHeight,
+                        onDraw: host.onDraw,
+                        hideOnZoom: false,
+                    });
+                    widget.serializeValue = () => ({
+                        height: BASE_SIZE,
+                    });
+
+                    widget.options.host.updateImages(this.imgs);
+                }
+
+                this.imgs.forEach((img) => {
+                    if (img instanceof HTMLVideoElement) {
+                        // Keep initial autoplay muted; user can unmute via controls or click
+                        img.muted = true;
+                        img.autoplay = true;
+                        // Best-effort autoplay; ignore promise rejection from blocked autoplay with sound
+                        const playPromise = img.play();
+                        if (playPromise && typeof playPromise.catch === 'function') {
+                            playPromise.catch(() => {});
+                        }
+                    }
+                });
+
+                // Force canvas update
+                this.setDirtyCanvas(true, true);
+            });
+    };
+
+    chainCallback(nodeType.prototype, "onExecuted", function (message) {
+        if (message?.video_url) {
+            this.images = message?.video_url;
+            this.setDirtyCanvas(true);
         }
     });
-    widget.serialize = false;
-    node.sirayVideoWidget = widget;
-}
-
-function updateButton(node) {
-    if (!node.sirayVideoWidget) return;
-    const label = node.sirayVideoPayload?.title || "Play video";
-    node.sirayVideoWidget.name = label;
-    node.setDirtyCanvas(true, true);
-}
-
-function normalizePayload(raw) {
-    if (!raw?.video_url) return null;
-    return {
-        video_url: raw.video_url,
-        title: raw.title || "Siray Video",
-        loop: !!raw.loop,
-        muted: raw.muted === undefined ? true : !!raw.muted,
-        autoplay: !!raw.autoplay,
-        poster: raw.poster || "",
-    };
 }
 
 app.registerExtension({
-    name: EXTENSION_NAME,
-    nodeCreated(node) {
-        if (node.comfyClass === "Siray Video Player" || node.type === "Siray Video Player") {
-            attachButton(node);
-            node.size = [
-                Math.max(node.size?.[0] || 0, 260),
-                Math.max(node.size?.[1] || 0, 80),
-            ];
+    name: "SirayVideoPlayer",
+    async beforeRegisterNodeDef(nodeType, nodeData) {
+        if (nodeData.name !== "Siray Video Player") {
+            return;
         }
-    },
-    beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData?.name !== "Siray Video Player") return;
-        const onExecuted = nodeType.prototype.onExecuted;
-        nodeType.prototype.onExecuted = function (message) {
-            onExecuted?.apply(this, arguments);
-            const payload =
-                message?.ui?.siray_video_preview ||
-                message?.siray_video_preview ||
-                (message?.video_url ? { video_url: message.video_url } : null);
-            const normalized = normalizePayload(payload);
-            if (!normalized) return;
-            this.sirayVideoPayload = normalized;
-            attachButton(this);
-            updateButton(this);
-        };
+        addVideoPreview(nodeType);
     },
 });

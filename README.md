@@ -27,7 +27,6 @@ Custom ComfyUI nodes for calling [Siray](https://siray.ai) image/video generatio
 - **Siray Task Status**: Polls an existing task (image or video) and returns the latest outputs.
 - **Siray Preview Video**: Convenience node to download a video URL to the output folder and surface it in the UI.
 - **Siray Video Player**: Paste any HTTP/HTTPS video URL and play it directly in the ComfyUI UI (no download required).
-- **Siray File Downloader**: Download a URL to disk; pick an output directory from the dropdown or type a custom path.
 
 Each generation/status node outputs a tuple of `(task_id, video_url, image, audio_url, text)` so you can wire it into preview or save nodes easily.
 
