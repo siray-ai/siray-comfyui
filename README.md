@@ -38,3 +38,8 @@ Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models thro
 
 ## License
 Apache-2.0.
+
+## Roadmap
+- Optional download-to-output node for videos with file management controls.
+- Batch task orchestration helpers (queue, cancel, retry) for Siray jobs.
+- Support more models from Siray.
