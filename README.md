@@ -1,42 +1,40 @@
-# ComfyUI-Siray-API
+# Siray ComfyUI Nodes
 
-Custom ComfyUI nodes for calling [Siray](https://siray.ai) image/video generation APIs directly from your workflows using the official [siray-python](https://github.com/siray-ai/siray-python) SDK. The nodes mirror the workflow of `wavespeed-comfyui`: you configure a client, trigger async generations, and optionally poll for results.
+Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models through the official [siray-python](https://github.com/siray-ai/siray-python) SDK. Model nodes are generated dynamically from Siray Model Verse schemas, so the inputs match the API for each model.
 
-- ✅ Supports Siray image and video async generation
-- ✅ Uses the official Siray Python SDK for all API calls
-- ✅ Converts ComfyUI tensors to Siray-compatible data URLs automatically
-- ✅ Polls tasks and separates image/video/text outputs for you
-- ✅ Optional config file for safely storing `SIRAY_API_KEY`
+## What you get
+- **Siray Client**: Creates an authenticated client. Reads `config.ini` when the input is empty; auto-creates `config.ini` beside this repo if missing.
+- **Siray Video Player**: Output node that streams any HTTP/HTTPS video URL in the UI (no download). Frontend lives in `web/videoPlayer.js`. Not compatible with ComfyUI Nodes 2.0.
+- **Siray <model_name>**: One node per Siray model fetched from Model Verse (`text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`, `image`, `video` tags). Nodes are skipped if the schema contains an `images` field (not yet supported).
 
-> Siray API reference: https://docs.siray.ai/api-reference
+## How generated model nodes behave
+- Inputs are derived from the model JSON schema:
+  - Numbers → `FLOAT` (step 0.01) or `INT`; booleans → `BOOLEAN`; enums → dropdown.
+  - Fields containing `prompt` are multiline; fields containing `image` accept a ComfyUI image tensor and are converted to Siray data URLs.
+  - Array fields accept newline-separated strings.
+  - `model` defaults to the model’s own name.
+  - Extra controls: `max_wait_time` (image default 300s, video default 600s) and `force_rerun`.
+- Execution:
+  - Image nodes return `(task_id, image_url, image)` where `image` is a tensor fetched from `image_url`.
+  - Video nodes return `(task_id, video_url)`.
+  - Tasks are created via the Siray SDK and polled until completion (`poll_interval` defaults to 5s).
 
-## Installation
-1. Go to your `ComfyUI/custom_nodes` folder.
-2. Clone or copy this repo into `siray-comfyui`.
-3. Install dependencies (usually already bundled with ComfyUI):  
-   `pip install -r requirements.txt`
-4. Add your API key:
-   - Either pass it in the `Siray Client` node, or
-   - Copy `config.ini.tmp` to `config.ini` and set `SIRAY_API_KEY=...`.
-5. Restart ComfyUI.
+## Install
+1) Place this repo in `ComfyUI/custom_nodes/siray-comfyui`.  
+2) Install deps (ComfyUI usually has most already):
+   ```bash
+   pip install -r requirements.txt
+   ```
+3) Add API key: pass it to **Siray Client** or fill `config.ini` (copy from `config.ini.tmp`).  
+4) Restart ComfyUI. On load, nodes fetch model schemas from Siray; if offline, only **Siray Client** and **Siray Video Player** will appear.
 
-## Nodes
-- **Siray Client**: Builds an authenticated client (reads `config.ini` when the input is empty).
-- **Siray Image Generate**: Submits an image generation task. Accepts optional init image or image URL plus extra JSON parameters. Can wait for completion.
-- **Siray Video Generate**: Submits a video generation task with the same wait/poll options.
-- **Siray Task Status**: Polls an existing task (image or video) and returns the latest outputs.
-- **Siray Preview Video**: Convenience node to download a video URL to the output folder and surface it in the UI.
-- **Siray Video Player**: Paste any HTTP/HTTPS video URL and play it directly in the ComfyUI UI (no download required).
-
-Each generation/status node outputs a tuple of `(task_id, video_url, image, audio_url, text)` so you can wire it into preview or save nodes easily.
-
-## Usage tips
-- `extra_params_json` lets you pass any Siray model-specific fields (e.g. size, cfg scale, seed) directly as JSON.
-- When providing an `IMAGE` input, the node converts it to a data URL expected by Siray.
-- If you only need the task id, set `wait_for_completion` to `False` and poll later with **Siray Task Status**.
+## Usage
+1) Drop **Siray Client** and supply an API key (or rely on `config.ini`).  
+2) Pick a **Siray <model_name>** node, set prompts/params, and execute.  
+3) For video URLs, connect to **Siray Video Player** to preview inline.
 
 ## Requirements
-The nodes depend on the official `siray` SDK plus `requests` and `Pillow` (see `requirements.txt`). ComfyUI already bundles `torch`/`numpy`, which are used for tensor conversion.
+`siray`, `requests`, `Pillow` (see `requirements.txt`); ComfyUI provides `torch`/`numpy`.
 
 ## License
 Apache-2.0.

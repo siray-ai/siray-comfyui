@@ -42,6 +42,11 @@ def _safe_json_loads(text: str):
         return None
 
 
+def _has_images_param(schema: Dict[str, Any]) -> bool:
+    properties = schema.get("properties") or {}
+    return "images" in properties
+
+
 def _should_include_model(model_entry: Dict[str, Any]) -> bool:
     tag = model_entry.get("tag") or ""
     # check if contained in SUPPORTED_TAG
@@ -139,6 +144,8 @@ def _build_siray_model_node(model_entry: Dict[str, Any]):
     model_name = model_entry.get("model_name", "")
     schema = _safe_json_loads(model_entry.get("model_extend_info", "") or "")
     if not schema or not isinstance(schema, dict):
+        return None
+    if _has_images_param(schema):
         return None
 
     tag = model_entry.get("tag") or ""
