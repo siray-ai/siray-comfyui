@@ -154,7 +154,7 @@ def _build_siray_model_node(model_entry: Dict[str, Any]):
             return input_types
 
         if task_type == "video":
-            RETURN_TYPES = ("STRING", "STRING")
+            RETURN_TYPES = ("STRING", "VIDEO_URI")
             RETURN_NAMES = ("task_id", "video_url")
         else:
             RETURN_TYPES = ("STRING", "STRING", "IMAGE")
