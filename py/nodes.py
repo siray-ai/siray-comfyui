@@ -250,11 +250,13 @@ class DownloadFileNode:
 
     @classmethod
     def INPUT_TYPES(cls):
+        dir_choices = cls._directory_choices()
         return {
             "required": {
                 "url": ("STRING", {"multiline": False}),
             },
             "optional": {
+                "save_dir_choice": (dir_choices,),
                 "save_dir": ("STRING", {"default": ""}),
                 "filename": ("STRING", {"default": ""}),
                 "overwrite": ("BOOLEAN", {"default": False}),
@@ -267,12 +269,41 @@ class DownloadFileNode:
     FUNCTION = "download"
     CATEGORY = "Siray/Utils"
 
-    def _default_output_dir(self) -> str:
+    @staticmethod
+    def _default_output_dir() -> str:
         if folder_paths is not None and hasattr(folder_paths, "get_output_directory"):
             return folder_paths.get_output_directory()
         fallback_dir = os.path.join(parent_dir, "downloads")
         os.makedirs(fallback_dir, exist_ok=True)
         return fallback_dir
+
+    @classmethod
+    def _directory_choices(cls) -> List[str]:
+        """Provide dropdown options for target directory."""
+        sentinel = "Custom (type below)"
+        try:
+            base = cls._default_output_dir()
+        except Exception:
+            base = ""
+
+        choices: List[str] = [sentinel]
+        if base:
+            choices.append(base)
+            try:
+                for entry in sorted(os.listdir(base)):
+                    full = os.path.join(base, entry)
+                    if os.path.isdir(full):
+                        choices.append(full)
+            except Exception:
+                pass
+
+        seen = set()
+        deduped: List[str] = []
+        for val in choices:
+            if val not in seen:
+                deduped.append(val)
+                seen.add(val)
+        return deduped or [sentinel]
 
     def _resolve_destination(self, url: str, save_dir: str, filename: str, overwrite: bool) -> str:
         target_dir = (save_dir or "").strip() or self._default_output_dir()
@@ -300,6 +331,7 @@ class DownloadFileNode:
     def download(
         self,
         url: str,
+        save_dir_choice: str = "Custom (type below)",
         save_dir: str = "",
         filename: str = "",
         overwrite: bool = False,
@@ -309,7 +341,12 @@ class DownloadFileNode:
         if not cleaned_url:
             raise ValueError("URL is required to download a file.")
 
-        dest_path = self._resolve_destination(cleaned_url, save_dir, filename, overwrite)
+        chosen_dir = save_dir
+        choice = (save_dir_choice or "").strip()
+        if choice and choice != "Custom (type below)":
+            chosen_dir = choice
+
+        dest_path = self._resolve_destination(cleaned_url, chosen_dir, filename, overwrite)
 
         try:
             with requests.get(cleaned_url, stream=True, timeout=timeout) as resp:
@@ -322,6 +359,60 @@ class DownloadFileNode:
             raise RuntimeError(f"Failed to download file from {cleaned_url}: {err}")
 
         return (dest_path,)
+
+
+class VideoPreviewNode:
+    """Preview an online video URL inside ComfyUI."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "video_url": ("STRING", {"multiline": False}),
+            },
+            "optional": {
+                "title": ("STRING", {"default": ""}),
+                "autoplay": ("BOOLEAN", {"default": False}),
+                "muted": ("BOOLEAN", {"default": True}),
+                "loop": ("BOOLEAN", {"default": False}),
+                "poster": ("STRING", {"default": ""}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("video_url",)
+    FUNCTION = "preview"
+    CATEGORY = "Siray/Utils"
+
+    def preview(
+        self,
+        video_url: str,
+        title: str = "",
+        autoplay: bool = False,
+        muted: bool = True,
+        loop: bool = False,
+        poster: str = "",
+    ):
+        cleaned_url = (video_url or "").strip()
+        if not cleaned_url:
+            raise ValueError("video_url is required for playback.")
+
+        parsed = urlparse(cleaned_url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("video_url must start with http or https.")
+
+        payload = {
+            "video_url": cleaned_url,
+            "title": (title or "").strip() or "Siray Video",
+            "autoplay": bool(autoplay),
+            "muted": bool(muted),
+            "loop": bool(loop),
+        }
+        poster_clean = (poster or "").strip()
+        if poster_clean:
+            payload["poster"] = poster_clean
+
+        return {"ui": {"siray_video_preview": payload}, "result": (cleaned_url,)}
 
 
 class SirayClientNode:
@@ -354,11 +445,13 @@ class SirayClientNode:
 NODE_CLASS_MAPPINGS = {
     "Siray Client": SirayClientNode,
     "Siray File Downloader": DownloadFileNode,
+    "Siray Video Player": VideoPreviewNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Siray Client": "Siray Client",
     "Siray File Downloader": "Siray File Downloader",
+    "Siray Video Player": "Siray Video Player",
 }
 
 # Dynamically generate per-model nodes using Siray model-verse schemas
