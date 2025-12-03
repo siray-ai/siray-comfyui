@@ -2,9 +2,16 @@ import configparser
 import json
 import os
 import time
+import uuid
 from typing import Any, Dict, List, Tuple
+from urllib.parse import urlparse
 
 import requests
+
+try:
+    import folder_paths
+except Exception:
+    folder_paths = None
 
 from .siray_api.client import SirayClient, SirayAPIError
 from .siray_api.utils import image_to_base64, image_url_to_tensor
@@ -238,6 +245,85 @@ def _load_dynamic_model_nodes():
     return nodes
 
 
+class DownloadFileNode:
+    """Download a file from a URL to a local path."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "url": ("STRING", {"multiline": False}),
+            },
+            "optional": {
+                "save_dir": ("STRING", {"default": ""}),
+                "filename": ("STRING", {"default": ""}),
+                "overwrite": ("BOOLEAN", {"default": False}),
+                "timeout": ("INT", {"default": 120, "min": 1, "max": 3600}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("file_path",)
+    FUNCTION = "download"
+    CATEGORY = "Siray/Utils"
+
+    def _default_output_dir(self) -> str:
+        if folder_paths is not None and hasattr(folder_paths, "get_output_directory"):
+            return folder_paths.get_output_directory()
+        fallback_dir = os.path.join(parent_dir, "downloads")
+        os.makedirs(fallback_dir, exist_ok=True)
+        return fallback_dir
+
+    def _resolve_destination(self, url: str, save_dir: str, filename: str, overwrite: bool) -> str:
+        target_dir = (save_dir or "").strip() or self._default_output_dir()
+        os.makedirs(target_dir, exist_ok=True)
+
+        parsed = urlparse(url)
+        default_name = os.path.basename(parsed.path.rstrip("/"))
+        if not default_name:
+            default_name = f"download_{int(time.time())}"
+
+        name = (filename or "").strip() or default_name
+        safe_name = os.path.basename(name) or f"download_{uuid.uuid4().hex[:8]}"
+        dest_path = os.path.abspath(os.path.join(target_dir, safe_name))
+
+        target_dir_abs = os.path.abspath(target_dir)
+        if os.path.commonpath([target_dir_abs, dest_path]) != target_dir_abs:
+            raise ValueError("Destination path escapes save_dir; adjust filename/save_dir.")
+
+        if os.path.exists(dest_path) and not overwrite:
+            stem, ext = os.path.splitext(dest_path)
+            dest_path = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+
+        return dest_path
+
+    def download(
+        self,
+        url: str,
+        save_dir: str = "",
+        filename: str = "",
+        overwrite: bool = False,
+        timeout: int = 120,
+    ):
+        cleaned_url = (url or "").strip()
+        if not cleaned_url:
+            raise ValueError("URL is required to download a file.")
+
+        dest_path = self._resolve_destination(cleaned_url, save_dir, filename, overwrite)
+
+        try:
+            with requests.get(cleaned_url, stream=True, timeout=timeout) as resp:
+                resp.raise_for_status()
+                with open(dest_path, "wb") as outfile:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            outfile.write(chunk)
+        except Exception as err:
+            raise RuntimeError(f"Failed to download file from {cleaned_url}: {err}")
+
+        return (dest_path,)
+
+
 class SirayClientNode:
     """Siray API client configuration node."""
 
@@ -267,10 +353,12 @@ class SirayClientNode:
 
 NODE_CLASS_MAPPINGS = {
     "Siray Client": SirayClientNode,
+    "Siray File Downloader": DownloadFileNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Siray Client": "Siray Client",
+    "Siray File Downloader": "Siray File Downloader",
 }
 
 # Dynamically generate per-model nodes using Siray model-verse schemas
