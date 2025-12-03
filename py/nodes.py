@@ -378,9 +378,8 @@ class VideoPreviewNode:
                 "poster": ("STRING", {"default": ""}),
             },
         }
+    OUTPUT_NODE = True
     RETURN_TYPES = ()
-    RETURN_NAMES = ()
-    OUTPUT_NODE = False
     FUNCTION = "preview"
     CATEGORY = "Siray/Utils"
 

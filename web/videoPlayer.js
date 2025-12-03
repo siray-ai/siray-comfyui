@@ -134,19 +134,31 @@ function ensureInlinePlayer(node) {
         } else {
             video.removeAttribute("poster");
         }
-        if (video.src !== payload.video_url) {
-            video.src = payload.video_url;
-            video.load();
-        }
-        if (payload.autoplay || !video.paused) {
-            setTimeout(() => {
-                video.play().catch(() => {});
-            }, 10);
-        }
+    if (video.src !== payload.video_url) {
+        video.src = payload.video_url;
+        video.load();
+    }
+    setTimeout(() => {
+        video.play().catch(() => {});
+    }, 30);
     };
 
-    document.body.appendChild(container);
-    node.addCustomWidget(widget);
+    try {
+        document.body.appendChild(container);
+        if (typeof node.addCustomWidget === "function") {
+            node.addCustomWidget(widget);
+        } else {
+            console.warn("[Siray] addCustomWidget not available; inline video disabled.");
+            container.remove();
+            return null;
+        }
+    } catch (err) {
+        console.warn("[Siray] Failed to create inline video widget", err);
+        try {
+            container.remove();
+        } catch (_) {}
+        return null;
+    }
 
     const onRemoved = node.onRemoved;
     node.onRemoved = function () {
@@ -316,6 +328,7 @@ function openModal(payload) {
 
     if (video.src !== payload.video_url) {
         video.src = payload.video_url;
+        video.load();
     }
 
     modal.sirayVideoPayload = payload;
@@ -326,11 +339,9 @@ function openModal(payload) {
     }
 
     modal.style.display = "flex";
-    if (payload.autoplay) {
-        setTimeout(() => {
-            video.play().catch(() => {});
-        }, 30);
-    }
+    setTimeout(() => {
+        video.play().catch(() => {});
+    }, 30);
 }
 
 function attachButton(node) {
@@ -354,7 +365,7 @@ function updateButtonLabel(node) {
 app.registerExtension({
     name: "siray.videoPlayer",
     nodeCreated(node) {
-        if (node.comfyClass === "Siray Video Player") {
+        if (node.comfyClass === "Siray Video Player" || node.type === "Siray Video Player") {
             attachButton(node);
             ensureInlinePlayer(node);
             node.size = [
@@ -371,7 +382,10 @@ app.registerExtension({
         const onExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (message) {
             onExecuted?.apply(this, arguments);
-            const payload = message?.ui?.siray_video_preview;
+            const payload =
+                message?.ui?.siray_video_preview ||
+                message?.siray_video_preview ||
+                (message?.video_url ? { video_url: message.video_url } : null);
             if (payload?.video_url) {
                 this.sirayVideoPreview = payload;
                 updateButtonLabel(this);
