@@ -2,6 +2,12 @@
   <a href="https://siray.ai" aria-label="Siray">
     <img src="https://www.siray.ai/black-logo.svg" alt="Siray logo" width="220">
   </a>
+  <p>
+    <a href="https://discord.com/invite/CmSbUzPSVP">
+      <img src="https://console.siray.ai/images/discord-fill.webp" alt="Discord" width="18" style="vertical-align: middle; margin-right: 6px;">
+      Join the Siray Discord
+    </a>
+  </p>
 </div>
 
 # Siray ComfyUI Nodes
