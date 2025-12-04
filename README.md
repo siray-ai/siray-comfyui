@@ -1,6 +1,11 @@
-![Siray logo](https://www.siray.ai/black-logo.svg)
 
 # Siray ComfyUI Nodes
+
+<div align="center">
+  <a href="https://siray.ai" aria-label="Siray">
+    <img src="https://www.siray.ai/black-logo.svg" alt="Siray logo" width="220">
+  </a>
+</div>
 
 Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models through the official [siray-python](https://github.com/siray-ai/siray-python) SDK. Model nodes are generated dynamically from Siray Model Verse schemas, so the inputs match the API for each model.
 
