@@ -5,13 +5,13 @@ Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models thro
 ## What you get
 - **Siray Client**: Creates an authenticated client. Reads `config.ini` when the input is empty; auto-creates `config.ini` beside this repo if missing.
 - **Siray Video Player**: Output node that streams any HTTP/HTTPS video URL in the UI (no download). Frontend lives in `web/videoPlayer.js`. Not compatible with ComfyUI Nodes 2.0.
-- **Siray <model_name>**: One node per Siray model fetched from Model Verse (`text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`, `image`, `video` tags). Nodes are skipped if the schema contains an `images` field (not yet supported).
+- **Siray <model_name>**: One node per Siray model fetched from Model Verse (`text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`, `image`, `video` tags). When a schema includes an `images` array, nodes create `image_0`...`image_n` inputs based on `minItems`/`maxItems`.
 
 ## How generated model nodes behave
 - Inputs are derived from the model JSON schema:
   - Numbers → `FLOAT` (step 0.01) or `INT`; booleans → `BOOLEAN`; enums → dropdown.
   - Fields containing `prompt` are multiline; fields containing `image` accept a ComfyUI image tensor and are converted to Siray data URLs.
-  - Array fields accept newline-separated strings.
+  - Array fields accept newline-separated strings; `images` arrays become multiple `image_*` inputs to match `minItems`/`maxItems`.
   - `model` defaults to the model’s own name.
   - Extra controls: `max_wait_time` (image default 300s, video default 600s) and `force_rerun`.
 - Execution:

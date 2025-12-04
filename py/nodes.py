@@ -42,9 +42,35 @@ def _safe_json_loads(text: str):
         return None
 
 
-def _has_images_param(schema: Dict[str, Any]) -> bool:
-    properties = schema.get("properties") or {}
-    return "images" in properties
+def _extract_image_item_range(prop_data: Dict[str, Any]) -> Tuple[int, int]:
+    """
+    Pull `minItems`/`maxItems` (or `minItem`/`maxItem`) from the images schema and normalise.
+
+    Defaults to a single required image when values are missing or invalid.
+    """
+    min_items = prop_data.get("minItems", prop_data.get("minItem"))
+    max_items = prop_data.get("maxItems", prop_data.get("maxItem"))
+
+    if min_items is None and max_items is None:
+        min_items = 1
+        max_items = 1
+    elif min_items is None:
+        min_items = max_items
+    elif max_items is None:
+        max_items = min_items
+
+    try:
+        min_items = int(min_items)
+    except Exception:
+        min_items = 1
+    try:
+        max_items = int(max_items)
+    except Exception:
+        max_items = min_items
+
+    min_items = max(0, min_items)
+    max_items = max(min_items, max_items)
+    return min_items, max_items
 
 
 def _should_include_model(model_entry: Dict[str, Any]) -> bool:
@@ -108,8 +134,18 @@ def _schema_to_comfyui_inputs(schema: Dict[str, Any], model_name: str):
     }
     array_inputs: List[str] = []
     image_inputs: List[str] = []
+    image_array_inputs: List[str] = []
 
     for prop_name, prop_data in properties.items():
+        if prop_name == "images":
+            min_items, max_items = _extract_image_item_range(prop_data)
+            for idx in range(max_items):
+                input_name = f"image_{idx}"
+                target = "required" if idx < min_items else "optional"
+                input_types[target][input_name] = ("IMAGE",)
+                image_array_inputs.append(input_name)
+            continue
+
         input_type, config, is_array, is_image = _property_to_input_type(
             prop_name, prop_data, model_name
         )
@@ -126,7 +162,7 @@ def _schema_to_comfyui_inputs(schema: Dict[str, Any], model_name: str):
     input_types["optional"]["max_wait_time"] = ("INT", {"default": 600, "min": 30, "max": 3600})
     input_types["optional"]["force_rerun"] = ("BOOLEAN", {"default": False})
 
-    return input_types, array_inputs, image_inputs, required_fields
+    return input_types, array_inputs, image_inputs, image_array_inputs, required_fields
 
 
 def _fetch_model_schemas() -> List[Dict[str, Any]]:
@@ -145,14 +181,16 @@ def _build_siray_model_node(model_entry: Dict[str, Any]):
     schema = _safe_json_loads(model_entry.get("model_extend_info", "") or "")
     if not schema or not isinstance(schema, dict):
         return None
-    if _has_images_param(schema):
-        return None
 
     tag = model_entry.get("tag") or ""
     node_label = f"Siray {model_name}"
-    input_types, array_inputs, image_inputs, required_fields = _schema_to_comfyui_inputs(
-        schema, model_name
-    )
+    (
+        input_types,
+        array_inputs,
+        image_inputs,
+        image_array_inputs,
+        required_fields,
+    ) = _schema_to_comfyui_inputs(schema, model_name)
     default_wait = 600 if tag in SUPPORTED_VIDEO_TAG else 300
     task_type = "video" if tag in SUPPORTED_VIDEO_TAG else "image"
 
@@ -176,8 +214,17 @@ def _build_siray_model_node(model_entry: Dict[str, Any]):
 
         def _build_payload(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
             payload = {}
+            image_list_payload: List[str] = []
+
+            for image_key in image_array_inputs:
+                encoded = image_to_base64(kwargs.get(image_key))
+                if encoded is not None:
+                    image_list_payload.append(encoded)
+
             for key, value in kwargs.items():
                 if key in {"client", "max_wait_time", "force_rerun"}:
+                    continue
+                if key in image_array_inputs:
                     continue
                 if value is None:
                     continue
@@ -196,6 +243,8 @@ def _build_siray_model_node(model_entry: Dict[str, Any]):
                     if value != "" or key in required_fields:
                         payload[key] = value
 
+            if image_list_payload:
+                payload["images"] = image_list_payload
             if "model" not in payload:
                 payload["model"] = model_name
             return payload
