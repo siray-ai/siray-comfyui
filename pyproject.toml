@@ -20,7 +20,7 @@ license = {file = "LICENSE"}
 #     "Environment :: GPU :: Apple Metal",    # Apple Metal support
 # ]
 
-dependencies = ["siray>=0.2.1", "requests~=2.32.5", "pillow~=11.3.0", "numpy~=2.0.2", "torchvision~=0.23.0"]
+dependencies = ["siray>=0.2.2", "requests~=2.32.5", "pillow~=11.3.0", "numpy~=2.0.2", "torchvision~=0.23.0"]
 
 [project.urls]
 Repository = "https://github.com/siray-ai/siray-comfyui"
