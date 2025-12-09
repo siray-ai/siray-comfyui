@@ -29,7 +29,7 @@ Documentation = "https://github.com/siray-ai/siray-comfyui/wiki"
 "Bug Tracker" = "https://github.com/siray-ai/siray-comfyui/issues"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "siray"
 DisplayName = "siray-comfyui"
 Icon = ""
 includes = [] 
