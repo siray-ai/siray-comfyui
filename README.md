@@ -14,6 +14,8 @@
 
 Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models through the official [siray-python](https://github.com/siray-ai/siray-python) SDK. Model nodes are generated dynamically from Siray Model Verse schemas, so the inputs match the API for each model.
 
+![Demo Workflow](images/demo-workflow.png)
+
 ## What you get
 - **Siray Client**: Creates an authenticated client. Reads `config.ini` when the input is empty; auto-creates `config.ini` beside this repo if missing.
 - **Siray Video Player**: Output node that streams any HTTP/HTTPS video URL in the UI (no download). Frontend lives in `web/videoPlayer.js`. Not compatible with ComfyUI Nodes 2.0.
