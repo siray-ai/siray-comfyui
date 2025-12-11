@@ -34,13 +34,28 @@ Custom ComfyUI nodes that call [Siray](https://siray.ai) image/video models thro
   - Tasks are created via the Siray SDK and polled until completion (`poll_interval` defaults to 5s).
 
 ## Install
-1) Place this repo in `ComfyUI/custom_nodes/siray-comfyui`.  
-2) Install deps (ComfyUI usually has most already):
+
+### Option 1: ComfyUI Manager (Recommended)
+1. Open ComfyUI and go to Manager
+2. Search for "siray-comfyui" or "Siray" in the custom nodes list
+3. Click Install
+4. Restart ComfyUI. On load, nodes fetch model schemas from Siray; if offline, only **Siray Client** and **Siray Video Player** will appear.
+
+### Option 2: Manual Installation
+1. Clone this repo to `ComfyUI/custom_nodes/siray-comfyui`:
+   ```bash
+   cd ComfyUI/custom_nodes
+   git clone https://github.com/siray-ai/siray-comfyui.git
+   cd siray-comfyui
+   ```
+2. Install dependencies (ComfyUI usually has most already):
    ```bash
    pip install -r requirements.txt
    ```
-3) Add API key: pass it to **Siray Client** or fill `config.ini` (copy from `config.ini.tmp`).  
-4) Restart ComfyUI. On load, nodes fetch model schemas from Siray; if offline, only **Siray Client** and **Siray Video Player** will appear.
+3. Restart ComfyUI. On load, nodes fetch model schemas from Siray; if offline, only **Siray Client** and **Siray Video Player** will appear.
+
+### Configuration
+Add API key: pass it to **Siray Client** node or fill `config.ini` (copy from `config.ini.tmp`).
 
 ## Usage
 1) Drop **Siray Client** and supply an API key (or rely on `config.ini`).  
